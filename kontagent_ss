@@ -1,0 +1,128 @@
+#! /usr/bin/python
+
+import argparse
+import os
+import csv
+import sys
+
+# small utility to convert alphabetic letters to numbers 1-26 (for the column)
+def letter_to_num(letter):
+    return ord(str.lower(letter)) - ord('a')
+
+# function to read a certain row number from csv file
+def read_row(num, file_path):
+    f = open(file_path, 'r')
+    reader = csv.reader(f)
+
+    # enumerate(reader) utilizes .next() to avoid loading ALL the file into memory
+    for i, line in enumerate(reader):
+        if  reader.line_num == num:
+            f.close()
+            return line
+        if reader.line_num > num:
+            break
+    f.close()
+    return nil
+
+## Handle number operations
+# assuming only one operation
+def handle_num(cell_args):
+    eval_str = ""
+    for num_str in cell_args[0:-1]:
+        # must convert integer num_str's to floats
+        num_str = str(float(num_str))
+
+        if eval_str == "":
+            # first element
+            eval_str += num_str
+        else:
+            eval_str += cell_args[-1] + num_str
+    ret_str = eval(eval_str)
+
+    # specific formatting to return integer whenever possible
+    # extremely hacky solution to check if float ends in ___.0
+    # if so, then convert to int
+    if str(ret_str)[-2:] =='.0':
+        ret_str = int(ret_str)
+    return str(ret_str)
+
+## Handle cell reference
+# assuming there is only ONE cell reference
+# ** In order to handle circular referencing, breaks a loop and returns -1 after seeing
+#      the initial reference again.
+# ^ Did not need to implement... Just thought about it
+def handle_ref(cell_args, fullpath):
+    ref = cell_args[0]
+    col_num = letter_to_num(ref[0])
+    row_num = int(ref[1:])
+
+    ref_row = read_row(row_num, fullpath)
+    return str.strip(ref_row[col_num])
+
+
+## Function that handles evaluation of cells
+# 
+# Input: (Note that all input is originally a string)
+#   int -> strips whitespace and returns integer
+#   eval -> begins with "=". Evaluates value and returns integer
+#   default -> Any other input should not be handled
+#
+# ** needs fullpath because we call read_row in handle_ref
+def eval_cell(cell, fullpath):
+    stripped_cell = str.strip(cell)
+    valid_ops = ['+', '-', '*', '/']
+    op = None
+
+    if stripped_cell == "":
+        return ""
+
+    try:
+        if float(stripped_cell):
+            # this cell is a number
+            return stripped_cell
+    except ValueError:
+        # Not a float/integer
+        if stripped_cell[0] == "=":
+            # need to eval cell
+
+            # remove '=' from cell
+            cell_args = stripped_cell[1:].split()
+            if stripped_cell[-1] in valid_ops:
+                # there is an operator and will assume that this is of the form =## ... ## op
+                return handle_num(cell_args)
+            return handle_ref(cell_args, fullpath)
+        else:
+            print "Improper input. Only handles the floats/ints >= 0 and '=_____' notation"
+
+# Main logic function for spreadsheet evaluator
+def eval_spreadsheet(fullpath):
+    if os.path.isdir(fullpath):
+        print "Please pass in the path to a CSV file and not a directory."
+    elif os.stat(fullpath).st_size == 0:
+        print os.stat(fullpath)
+        print "The file either does not exist or is empty."
+    else:
+        # then file exists/isn't empty and we can continue with the parsing
+        f = open(fullpath, 'r')
+        reader = csv.reader(f)
+
+        for i, row in enumerate(reader):
+            last_cell = None
+            for cell in row:
+                if last_cell != None:
+                    sys.stdout.write(last_cell + ',\t')
+                last_cell = eval_cell(cell, fullpath)
+            sys.stdout.write(last_cell + '\n')
+        f.close()
+
+
+# code that provides "pretty" command line help and argument checking
+parser = argparse.ArgumentParser(description='Simple evaluator for a CSV spreadsheet')
+parser.add_argument('csv_file', metavar='CSV_FILE', type=str,
+                                help='Input CSV spreadsheet filepath')
+args = parser.parse_args()
+
+
+# find full path rather than relative path for os module's use
+fullpath =  os.path.realpath(args.csv_file)
+eval_spreadsheet(fullpath)
