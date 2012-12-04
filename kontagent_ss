@@ -4,6 +4,7 @@ import argparse
 import os
 import csv
 import sys
+import re
 
 ##### UTiLS #####
 
@@ -98,7 +99,7 @@ class KTSpreadsheet:
     # ** needs fullpath because we call read_row in handle_ref
     def eval_cell(self, cell, fullpath):
         stripped_cell = str.strip(cell)
-        valid_ops = ['+', '-', '*', '/']
+        valid_ops = {'+': 2, '-': 2, '*': 2, '/': 2, '!': 1}
         op = None
     
         if stripped_cell == "":
@@ -114,10 +115,26 @@ class KTSpreadsheet:
                 # need to evaluate cell
                 # remove '=' from cell
                 cell_args = stripped_cell[1:].split()
-                if stripped_cell[-1] in valid_ops:
-                    # there is an operator and will assume that this is of the form =## ... ## op
-                    return self.handle_num(cell_args)
-                return self.handle_ref(cell_args, fullpath)
+                for i in range(0, len(cell_args)):
+                  arg = cell_args[i]
+                  match = re.search("[A-Z][0-9]+", arg)
+                  if match != None:
+                    # This is a reference cell_arg
+                    cell_args[i] = handle_ref(arg, fullpath)
+                arg_list = []
+                for i in range(0, len(cell_args)):
+                  arg = cell_args[i]
+                  if arg in valid_ops.keys():
+                    number_of_args = valid_ops[arg]
+                    op_args = arg_list[len(arg_list)-number_of_args:]
+                    arg_list = arg_list[:len(arg_list)-number_of_args]
+                    op_args.append(arg)
+                    arg_list.append(self.handle_num(op_args))
+                  else:
+                    arg_list.append(arg)
+                if len(arg_list) == 1:
+                  return arg_list[0]
+                print "AHHHHH IT'S WRONG"
             else:
                 print "Improper input. Only handles the floats/ints >= 0 and '=_____' notation"
     
