@@ -4,12 +4,17 @@ import argparse
 import os
 import csv
 import sys
+import re
 
 ##### UTiLS #####
+
+class RecursiveException(Exception):
+    pass
 
 class KTSpreadsheet:
     
     spreadsheet = None
+    cells_seen = []
     
     def __init__(self, fullpath):
         if os.path.isdir(fullpath):
@@ -33,23 +38,7 @@ class KTSpreadsheet:
     # small utility to convert alphabetic letters to numbers 1-26 (for the column)
     def letter_to_num(self, letter):
         return ord(str.lower(letter)) - ord('a')
-    
-    # function to read a certain row number from csv file
-    def read_row(self, num, file_path):
-        f = open(file_path, 'r')
-        reader = csv.reader(f)
-    
-        # enumerate(reader) utilizes .next() to avoid loading ALL the file into memory
-        for i, line in enumerate(reader):
-            if  reader.line_num == num:
-                f.close()
-                return line
-            if reader.line_num > num:
-                break
-        f.close()
-        return nil
-    
-    
+
     ##### LOGiC #####
     
     ## Handle number operations
@@ -74,18 +63,32 @@ class KTSpreadsheet:
             ret_str = int(ret_str)
         return str(ret_str)
     
+    def parse_ref(self, ref):
+        col_num = self.letter_to_num(ref[0])
+        row_num = int(ref[1:])
+        return col_num, row_num
+    
     ## Handle cell reference
     # assuming there is only ONE cell reference
     # ** In order to handle circular referencing, breaks a loop and returns -1 after seeing
     #      the initial reference again.
     # ^ Did not need to implement... Just thought about it
-    def handle_ref(self, cell_args, fullpath):
-        ref = cell_args[0]
-        col_num = self.letter_to_num(ref[0])
-        row_num = int(ref[1:])
+    def handle_ref(self, ref):
+        if ref in self.cells_seen:
+            self.cells_seen.append(ref)
+            raise RecursiveException("[" + " -> ".join(self.cells_seen) + "]")
+        self.cells_seen.append(ref)
+        
+        col_num, row_num = self.parse_ref(ref)
     
-        ref_row = self.read_row(row_num, fullpath)
-        return str.strip(ref_row[col_num])
+        ref_cell = self.spreadsheet[row_num-1][col_num]
+        new_refs = re.search('[a-z]\d{1,2}', ref_cell, re.IGNORECASE)
+        if new_refs:
+            ref = new_refs.group()
+            this_col_num, this_row_num = self.parse_ref(ref)
+            self.spreadsheet[this_row_num-1][this_col_num] = self.handle_ref(ref)
+        else:
+            return self.spreadsheet[row_num-1][col_num]
     
     
     ## Function that handles evaluation of cells
@@ -96,9 +99,9 @@ class KTSpreadsheet:
     #   default -> Any other input should not be handled
     #
     # ** needs fullpath because we call read_row in handle_ref
-    def eval_cell(self, cell, fullpath):
+    def eval_cell(self, cell):
         stripped_cell = str.strip(cell)
-        valid_ops = ['+', '-', '*', '/']
+        valid_ops = {'+': 2, '-': 2, '*': 2, '/': 2, '!': 1}
         op = None
     
         if stripped_cell == "":
@@ -114,10 +117,27 @@ class KTSpreadsheet:
                 # need to evaluate cell
                 # remove '=' from cell
                 cell_args = stripped_cell[1:].split()
-                if stripped_cell[-1] in valid_ops:
-                    # there is an operator and will assume that this is of the form =## ... ## op
-                    return self.handle_num(cell_args)
-                return self.handle_ref(cell_args, fullpath)
+                for i in range(0, len(cell_args)):
+                  arg = cell_args[i]
+                  match = re.search("[A-Z][0-9]+", arg)
+                  if match != None:
+                    # This is a reference cell_arg
+                    self.cells_seen = []
+                    cell_args[i] = self.handle_ref(arg)
+                arg_list = []
+                for i in range(0, len(cell_args)):
+                  arg = cell_args[i]
+                  if arg in valid_ops.keys():
+                    number_of_args = valid_ops[arg]
+                    op_args = arg_list[len(arg_list)-number_of_args:]
+                    arg_list = arg_list[:len(arg_list)-number_of_args]
+                    op_args.append(arg)
+                    arg_list.append(self.handle_num(op_args))
+                  else:
+                    arg_list.append(arg)
+                if len(arg_list) == 1:
+                  return arg_list[0]
+                print "AHHHHH IT'S WRONG"
             else:
                 print "Improper input. Only handles the floats/ints >= 0 and '=_____' notation"
     
@@ -125,7 +145,7 @@ class KTSpreadsheet:
     def eval_spreadsheet(self):
         for row_index, row in enumerate(self.spreadsheet):
             for cell_index, cell in enumerate(row):
-                self.spreadsheet[row_index][cell_index] = self.eval_cell(cell, fullpath)
+                self.spreadsheet[row_index][cell_index] = self.eval_cell(cell)                    
             
     def print_spreadsheet(self):
         for row in self.spreadsheet:
@@ -144,5 +164,8 @@ args = parser.parse_args()
 # find full path rather than relative path for os module's use
 fullpath =  os.path.realpath(args.csv_file)
 kt_spreadsheet = KTSpreadsheet(fullpath)
-kt_spreadsheet.eval_spreadsheet()
-kt_spreadsheet.print_spreadsheet()
+try:
+    kt_spreadsheet.eval_spreadsheet()
+    kt_spreadsheet.print_spreadsheet()
+except RecursiveException, e:
+    print e.message
