@@ -5,6 +5,7 @@ import os
 import csv
 import sys
 import re
+import math
 
 ##### UTiLS #####
 
@@ -45,7 +46,15 @@ class KTSpreadsheet:
     # assuming only one operation
     def handle_num(self, cell_args):
         eval_str = ""
-        for num_str in cell_args[0:-1]:
+        args = cell_args[0:-1]
+        op = cell_args[-1]
+
+        # assuming only single operator is "!" factorial operator
+        if len(args) == 1:
+          return str(math.factorial(float(args[0])))
+
+        # operators that take 2 or more arguments
+        for num_str in args:
             # must convert integer num_str's to floats
             num_str = str(float(num_str))
     
